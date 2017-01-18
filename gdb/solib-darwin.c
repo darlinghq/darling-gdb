@@ -67,7 +67,7 @@ struct gdb_dyld_all_image_infos
 
 /* Current all_image_infos version.  */
 #define DYLD_VERSION_MIN 1
-#define DYLD_VERSION_MAX 14
+#define DYLD_VERSION_MAX 15
 
 /* Per PSPACE specific data.  */
 struct darwin_info
@@ -213,6 +213,12 @@ find_program_interpreter (void)
   /* If we have an exec_bfd, get the interpreter from the load commands.  */
   if (exec_bfd)
     {
+      if (strstr(exec_bfd->filename, "/mldr") == exec_bfd->filename + strlen(exec_bfd->filename) - 5)
+          return "mldr";
+      /* If we're being used to run an ordinary ELF executable and it's not Darling's mldr, bail out */
+      if (strncmp(exec_bfd->xvec->name, "elf", 3) == 0)
+        return NULL;
+
       bfd_mach_o_load_command *cmd;
 
       if (bfd_mach_o_lookup_command (exec_bfd,
@@ -293,8 +299,12 @@ darwin_current_sos (void)
       /* Discard executable.  Should happen only once.  */
       hdr_val = extract_unsigned_integer
         (hdr.filetype, sizeof (hdr.filetype), byte_order);
-      if (hdr_val == BFD_MACH_O_MH_EXECUTE)
+#if 0 // on Darling, we need to announce the main executable explicitly
+      if (hdr_val == BFD_MACH_O_MH_EXECUTE) {
+          printf("Discarding executable\n");
         continue;
+      }
+#endif
 
       target_read_string (path_addr, &file_path,
 			  SO_NAME_MAX_PATH_SIZE - 1, &errcode);
@@ -462,35 +472,45 @@ darwin_solib_get_all_image_info_addr_at_init (struct darwin_info *info)
   if (!interp_name)
     return;
 
-  /* Create a bfd for the interpreter.  */
-  gdb_bfd_ref_ptr dyld_bfd (gdb_bfd_open (interp_name, gnutarget, -1));
-  if (dyld_bfd != NULL)
-    {
-      gdb_bfd_ref_ptr sub
-	(gdb_bfd_mach_o_fat_extract (dyld_bfd.get (), bfd_object,
-				     gdbarch_bfd_arch_info (target_gdbarch ())));
-      if (sub != NULL)
-	dyld_bfd = sub;
-      else
-	dyld_bfd.release ();
-    }
-  if (dyld_bfd == NULL)
-    return;
+  if (strcmp(interp_name, "mldr") != 0) {
+      /* Create a bfd for the interpreter.  */
+      gdb_bfd_ref_ptr dyld_bfd (gdb_bfd_open (interp_name, gnutarget, -1));
+      if (dyld_bfd != NULL)
+        {
+          gdb_bfd_ref_ptr sub
+        (gdb_bfd_mach_o_fat_extract (dyld_bfd.get (), bfd_object,
+                         gdbarch_bfd_arch_info (target_gdbarch ())));
+          if (sub != NULL)
+        dyld_bfd = sub;
+          else
+        dyld_bfd.release ();
+        }
+      if (dyld_bfd == NULL)
+        return;
 
-  /* We find the dynamic linker's base address by examining
-     the current pc (which should point at the entry point for the
-     dynamic linker) and subtracting the offset of the entry point.  */
-  load_addr = (regcache_read_pc (get_current_regcache ())
-               - bfd_get_start_address (dyld_bfd.get ()));
+      /* We find the dynamic linker's base address by examining
+         the current pc (which should point at the entry point for the
+         dynamic linker) and subtracting the offset of the entry point.  */
+      load_addr = (regcache_read_pc (get_current_regcache ())
+                   - bfd_get_start_address (dyld_bfd.get ()));
 
-  /* Now try to set a breakpoint in the dynamic linker.  */
-  info->all_image_addr =
-    lookup_symbol_from_bfd (dyld_bfd.get (), "_dyld_all_image_infos");
+      /* Now try to set a breakpoint in the dynamic linker.  */
+      info->all_image_addr =
+        lookup_symbol_from_bfd (dyld_bfd.get (), "_dyld_all_image_infos");
 
-  if (info->all_image_addr == 0)
-    return;
+      if (info->all_image_addr == 0)
+        return;
 
-  info->all_image_addr += load_addr;
+      info->all_image_addr += load_addr;
+  } else {
+      CORE_ADDR desc_addr;
+
+      desc_addr = lookup_symbol_from_bfd(exec_bfd, "_dyld_all_image_infos");
+      // printf("Found MLDR desc_symbol at %p\n", desc_addr);
+
+      info->all_image_addr = desc_addr;
+  }
+
 }
 
 /* Extract dyld_all_image_addr reading it from
@@ -596,8 +616,11 @@ static void
 darwin_relocate_section_addresses (struct so_list *so,
 				   struct target_section *sec)
 {
-  sec->addr += so->lm_info->lm_addr;
-  sec->endaddr += so->lm_info->lm_addr;
+  uint64_t slide = so->lm_info->lm_addr;
+  slide -= bfd_mach_o_get_base_address(sec->the_bfd_section->owner);
+
+  sec->addr += slide;
+  sec->endaddr += slide;
 
   /* Best effort to set addr_high/addr_low.  This is used only by
      'info sharedlibary'.  */

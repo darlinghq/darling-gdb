@@ -50,6 +50,7 @@ static struct link_map_offsets *svr4_fetch_link_map_offsets (void);
 static int svr4_have_link_map_offsets (void);
 static void svr4_relocate_main_executable (void);
 static void svr4_free_library_list (void *p_list);
+extern struct target_so_ops darwin_so_ops;
 
 /* Link map info to include in an allocated so_list entry.  */
 
@@ -1098,7 +1099,9 @@ struct svr4_library_list
 static void
 svr4_free_so (struct so_list *so)
 {
+#if 0 // Darwin doesn't free...
   xfree (so->lm_info);
+#endif
 }
 
 /* Implement target_so_ops.clear_so.  */
@@ -1604,6 +1607,23 @@ svr4_current_sos (void)
 	  sop = &so->next;
 	}
     }
+
+  struct so_list* darwin_head = darwin_so_ops.current_sos();
+  if (darwin_head != NULL)
+  {
+	  // Concatenate linked lists
+      struct so_list* cur = darwin_head;
+	  while (1)
+	  {
+          // printf("so name: %s\n", cur->so_name);
+		  if (cur->next == NULL)
+		  {
+			  cur->next = so_head;
+			  return darwin_head;
+		  }
+		  cur = cur->next;
+	  }
+  }
 
   return so_head;
 }
@@ -3096,6 +3116,9 @@ svr4_solib_create_inferior_hook (int from_tty)
 
   if (!enable_break (info, from_tty))
     return;
+
+  // Try to detect Darling
+  darwin_so_ops.solib_create_inferior_hook(from_tty);
 }
 
 static void
@@ -3141,9 +3164,16 @@ svr4_relocate_section_addresses (struct so_list *so,
                                  struct target_section *sec)
 {
   bfd *abfd = sec->the_bfd_section->owner;
-
-  sec->addr = svr4_truncate_ptr (sec->addr + lm_addr_check (so, abfd));
-  sec->endaddr = svr4_truncate_ptr (sec->endaddr + lm_addr_check (so, abfd));
+  if (strncmp (abfd->xvec->name, "mach-o", 6) == 0)
+  {
+      // forward call to solib-darwin if it's a Mach-O
+      darwin_so_ops.relocate_section_addresses(so, sec);
+  }
+  else
+  {
+      sec->addr = svr4_truncate_ptr (sec->addr + lm_addr_check (so, abfd));
+      sec->endaddr = svr4_truncate_ptr (sec->endaddr + lm_addr_check (so, abfd));
+  }
 }
 
 
