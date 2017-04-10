@@ -213,7 +213,10 @@ find_program_interpreter (void)
   /* If we have an exec_bfd, get the interpreter from the load commands.  */
   if (exec_bfd)
     {
-      if (strstr(exec_bfd->filename, "/mldr") == exec_bfd->filename + strlen(exec_bfd->filename) - 5)
+      const char* mldr = strstr(exec_bfd->filename, "/mldr");
+
+      // printf("fname = %s\n", exec_bfd->filename);
+      if (mldr != NULL && (strcmp(mldr, "/mldr") == 0 || strcmp(mldr, "/mldr32") == 0))
           return "mldr";
       /* If we're being used to run an ordinary ELF executable and it's not Darling's mldr, bail out */
       if (strncmp(exec_bfd->xvec->name, "elf", 3) == 0)
@@ -295,7 +298,10 @@ darwin_current_sos (void)
       hdr_val = extract_unsigned_integer
         (hdr.magic, sizeof (hdr.magic), byte_order);
       if (hdr_val != BFD_MACH_O_MH_MAGIC && hdr_val != BFD_MACH_O_MH_MAGIC_64)
+      {
+        // printf("Header magic is 0x%x, disregard\n", hdr_val);
         continue;
+      }
       /* Discard executable.  Should happen only once.  */
       hdr_val = extract_unsigned_integer
         (hdr.filetype, sizeof (hdr.filetype), byte_order);
@@ -437,7 +443,7 @@ darwin_in_dynsym_resolve_code (CORE_ADDR pc)
    counting properly.  This will either return NULL, or return a new
    reference to a BFD.  */
 
-static gdb_bfd_ref_ptr
+gdb_bfd_ref_ptr
 gdb_bfd_mach_o_fat_extract (bfd *abfd, bfd_format format,
 			    const bfd_arch_info_type *arch)
 {
@@ -469,10 +475,11 @@ darwin_solib_get_all_image_info_addr_at_init (struct darwin_info *info)
 
   /* Find the program interpreter.  */
   interp_name = find_program_interpreter ();
+  // printf("interp_name = %s\n", interp_name);
   if (!interp_name)
     return;
 
-  if (strcmp(interp_name, "mldr") != 0) {
+  if (strcmp(interp_name, "mldr") != 0 && strcmp(interp_name, "mldr32") != 0) {
       /* Create a bfd for the interpreter.  */
       gdb_bfd_ref_ptr dyld_bfd (gdb_bfd_open (interp_name, gnutarget, -1));
       if (dyld_bfd != NULL)

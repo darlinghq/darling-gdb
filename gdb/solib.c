@@ -494,6 +494,7 @@ solib_bfd_fopen (char *pathname, int fd)
   return abfd;
 }
 
+extern struct target_so_ops darwin_so_ops;
 /* Find shared library PATHNAME and open a BFD for it.  */
 
 gdb_bfd_ref_ptr
@@ -502,6 +503,10 @@ solib_bfd_open (char *pathname)
   char *found_pathname;
   int found_file;
   const struct bfd_arch_info *b;
+
+  // Needed because darwin requires special handling for fat Mach-Os
+  if (strstr(pathname, ".dylib") == pathname + strlen(pathname) - 6)
+    return darwin_so_ops.bfd_open(pathname);
 
   /* Search for shared library file.  */
   found_pathname = solib_find (pathname, &found_file);

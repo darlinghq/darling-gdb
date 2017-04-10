@@ -38,6 +38,10 @@
 /* If non-zero displays debugging message.  */
 static unsigned int mach_o_debug_level = 0;
 
+extern gdb_bfd_ref_ptr
+gdb_bfd_mach_o_fat_extract (bfd *abfd, bfd_format format,
+			    const bfd_arch_info_type *arch);
+
 /* Dwarf debugging information are never in the final executable.  They stay
    in object files and the executable contains the list of object files read
    during the link.
@@ -429,7 +433,7 @@ macho_resolve_oso_sym_with_minsym (struct objfile *main_objfile, asymbol *sym)
 /* Add oso file OSO/ABFD as a symbol file.  */
 
 static void
-macho_add_oso_symfile (oso_el *oso, const gdb_bfd_ref_ptr &abfd,
+macho_add_oso_symfile (oso_el *oso, const gdb_bfd_ref_ptr &abfd_in,
 		       const char *name,
                        struct objfile *main_objfile,
 		       symfile_add_flags symfile_flags)
@@ -447,6 +451,10 @@ macho_add_oso_symfile (oso_el *oso, const gdb_bfd_ref_ptr &abfd,
   if (mach_o_debug_level > 0)
     printf_unfiltered
       (_("Loading debugging symbols from oso: %s\n"), oso->name);
+
+  gdb_bfd_ref_ptr abfd
+    (gdb_bfd_mach_o_fat_extract (abfd_in.get (), bfd_object,
+				 gdbarch_bfd_arch_info (target_gdbarch ())));
 
   if (!bfd_check_format (abfd.get (), bfd_object))
     {
@@ -620,6 +628,7 @@ macho_add_oso_symfile (oso_el *oso, const gdb_bfd_ref_ptr &abfd,
      main_objfile->flags & (OBJF_REORDERED | OBJF_SHARED
 			    | OBJF_READNOW | OBJF_USERLOADED),
      main_objfile);
+  abfd.release();
 }
 
 /* Read symbols from the vector of oso files.
