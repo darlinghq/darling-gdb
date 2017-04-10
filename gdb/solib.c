@@ -504,10 +504,6 @@ solib_bfd_open (char *pathname)
   int found_file;
   const struct bfd_arch_info *b;
 
-  // Needed because darwin requires special handling for fat Mach-Os
-  if (strstr(pathname, ".dylib") == pathname + strlen(pathname) - 6)
-    return darwin_so_ops.bfd_open(pathname);
-
   /* Search for shared library file.  */
   found_pathname = solib_find (pathname, &found_file);
   if (found_pathname == NULL)
@@ -525,8 +521,17 @@ solib_bfd_open (char *pathname)
 
   /* Check bfd format.  */
   if (!bfd_check_format (abfd.get (), bfd_object))
+  {
+    // printf("name: %s\n", abfd->xvec->name);
+    // Needed because darwin requires special handling for fat Mach-Os
+    abfd.release();
+
+    abfd = darwin_so_ops.bfd_open(pathname);
+    if (abfd != NULL)
+      return abfd;
     error (_("`%s': not in executable format: %s"),
 	   bfd_get_filename (abfd), bfd_errmsg (bfd_get_error ()));
+  }
 
   /* Check bfd arch.  */
   b = gdbarch_bfd_arch_info (target_gdbarch ());
