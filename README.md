@@ -11,16 +11,16 @@ I build GDB like this, adapt it to your preferences:
 	--disable-install-libiberty --without-guile --disable-readline \
 	--with-system-readline --without-zlib --with-system-zlib \
 	--with-separate-debug-dir=/usr/lib/debug --without-expat \
-	--without-lzma --enable-nls --enable-targets=all --program-suffix=-darling
+	--without-lzma --enable-nls --enable-targets=all --program-suffix=-darling \
+	--prefix=/usr/local/libexec/darling
 ```
 
 ## Usage example
 
-TODO: This needs to be adapted for use in Darling's containers!
+It is not yet possible to run Mach-O executables directly, you must tell gdb to run them through `mldr`:
 
 ```
-export DYLD_ROOT_PATH=/usr/local/libexec/darling
-gdb-darling /usr/local/libexec/mldr
+gdb-darling /bin/mldr
 (gdb) r /some/apple/binary
 ```
 
